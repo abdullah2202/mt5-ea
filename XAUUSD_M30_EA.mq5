@@ -256,11 +256,20 @@ void LogEvent(string event_type, string details)
         double lower_wick = MathMin(last_open, last_close) - last_low;
    
    // Candle body rules
-        if(body < 5 * g_pip || body > 50 * g_pip) return;
+        if(body < 5 * g_pip || body > 50 * g_pip) {
+            Print("Setup Invalidated: Body size is not in range");
+            return;
+        }
    
    // Wick rules (both upper and lower wicks)
-        if(upper_wick < 1 * g_pip || upper_wick > body * 0.5) return;
-        if(lower_wick < 1 * g_pip || lower_wick > body * 0.5) return;
+        if(upper_wick < 1 * g_pip || upper_wick > body * 0.5) {
+            Print("Setup Invalidated: Upper wick is not in range");
+            return;
+        }
+        if(lower_wick < 1 * g_pip || lower_wick > body * 0.5) {
+            Print("Setup Invalidated: Lower wick is not in range");
+            return;
+        }
    
    // Setup Conditions for Long
         if(g_nearest_res > 0)
@@ -328,6 +337,7 @@ void LogEvent(string event_type, string details)
             {
                 g_setup_valid_long = false;
                 LogEvent("Setup Cancelled", "\"reason\":\"Price broke below setup candle low before entry\"");
+                Print("Entry Invalidated: Price broke below setup candle low before entry");
                 return;
             }
         
@@ -354,6 +364,7 @@ void LogEvent(string event_type, string details)
             {
                 g_setup_valid_short = false;
                 LogEvent("Setup Cancelled", "\"reason\":\"Price broke above setup candle high before entry\"");
+                Print("Entry Invalidated: Price broke above setup candle high before entry");
                 return;
             }
         
