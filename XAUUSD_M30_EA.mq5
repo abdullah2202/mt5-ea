@@ -39,6 +39,7 @@ double g_setup_sl = 0;
 
 int g_ticket = 0;
 bool g_partial_closed = false;
+bool g_sl_partial_closed = false;
 bool g_trailing_activated = false;
 
 //+------------------------------------------------------------------+
@@ -112,7 +113,7 @@ void LogEvent(string event_type, string details)
         ArrayResize(post_data, ArraySize(post_data) - 1);
    
         ResetLastError();
-        return;
+        // return;
         int res = WebRequest("POST", InpDashboardURL, headers, timeout, post_data, result, result_headers);
         if(res == - 1)
         Print("WebRequest Error: ", GetLastError());
@@ -255,7 +256,7 @@ void LogEvent(string event_type, string details)
         double lower_wick = MathMin(last_open, last_close) - last_low;
    
    // Candle body rules
-        if(body < 10 * g_pip || body > 100 * g_pip) return;
+        if(body < 5 * g_pip || body > 50 * g_pip) return;
    
    // Wick rules (both upper and lower wicks)
         if(upper_wick < 1 * g_pip || upper_wick > body * 0.5) return;
@@ -273,14 +274,8 @@ void LogEvent(string event_type, string details)
                     g_setup_high = last_high;
                     g_setup_low = last_low;
             
-                    // New SL logic
-                    if(body <= 50 * g_pip)
-                    g_setup_sl = g_setup_low;
-                    else
-                    g_setup_sl = last_open + (last_close - last_open) * 0.5;
-
-                    // Testing SL same as 1st TP for 1:1
-                    g_setup_sl = last_close - InpFirstTP;
+                    // SL will be calculated at the moment of entry in CheckEntry()
+                    g_setup_sl = 0;
 
                     double entry_price = g_setup_high + 1 * g_pip;
                     double est_lot = CalculateLotSize(entry_price, g_setup_sl);
@@ -301,14 +296,8 @@ void LogEvent(string event_type, string details)
                     g_setup_high = last_high;
                     g_setup_low = last_low;
             
-                    // New SL logic
-                    if(body <= 50 * g_pip)
-                    g_setup_sl = g_setup_high;
-                    else
-                    g_setup_sl = last_open - (last_open - last_close) * 0.5;
-
-                    // Testing SL same as 1st TP for 1:1
-                    g_setup_sl = last_close + InpFirstTP;
+                    // SL will be calculated at the moment of entry in CheckEntry()
+                    g_setup_sl = 0;
 
                     double entry_price = g_setup_low - 1 * g_pip;
                     double est_lot = CalculateLotSize(entry_price, g_setup_sl);
@@ -350,7 +339,9 @@ void LogEvent(string event_type, string details)
       // Check entry trigger: lower wick formed BEFORE breaking setup candle high
             if(g_wick_formed_long && current_ask >= g_setup_high + 1 * g_pip)
             {
-                ExecuteOrder(ORDER_TYPE_BUY, g_setup_high + 1 * g_pip, g_setup_sl);
+                double entry_sl = iLow(_Symbol, _Period, 0) - 1 * g_pip;
+                ExecuteOrder(ORDER_TYPE_BUY, g_setup_high + 1 * g_pip, entry_sl);
+                Print("=== New Order: ORDER_TYPE_BUY at: ", g_setup_high + 1 * g_pip);
                 g_setup_valid_long = false; // Prevent further entries
             }
         }
@@ -374,7 +365,9 @@ void LogEvent(string event_type, string details)
       // Check entry trigger: upper wick formed BEFORE breaking setup candle low
             if(g_wick_formed_short && current_price <= g_setup_low - 1 * g_pip)
             {
-                ExecuteOrder(ORDER_TYPE_SELL, g_setup_low - 1 * g_pip, g_setup_sl);
+                double entry_sl = iHigh(_Symbol, _Period, 0) + 1 * g_pip;
+                ExecuteOrder(ORDER_TYPE_SELL, g_setup_low - 1 * g_pip, entry_sl);
+                Print("=== New Order: ORDER_TYPE_SELL at: ", g_setup_low - 1 * g_pip);
                 g_setup_valid_short = false; // Prevent further entries
             }
         }
@@ -410,6 +403,7 @@ void LogEvent(string event_type, string details)
             if(result.retcode == TRADE_RETCODE_DONE)
             {
                 g_partial_closed = false;
+                g_sl_partial_closed = false;
                 g_trailing_activated = false;
                 LogEvent("Entry", StringFormat("\"symbol\":\" % s\", \"direction\":\" % s\", \"price\": % f, \"volume\": % f",
                 _Symbol, (type == ORDER_TYPE_BUY) ? "BUY" : "SELL", request.price, request.volume));
@@ -450,7 +444,42 @@ void LogEvent(string event_type, string details)
             else if(type == POSITION_TYPE_SELL)
             profit_pips = (open_price - current_price) / g_pip;
          
-            Print("profit pips: ", profit_pips);
+            // Print("profit pips: ", profit_pips);
+            // Defensive Partial Close: 50% of position if price reaches 50% of SL
+            if(!g_partial_closed && !g_sl_partial_closed && sl_price > 0)
+            {
+                bool trigger_defensive = false;
+                if(type == POSITION_TYPE_BUY && current_price <= (open_price + sl_price) / 2.0) trigger_defensive = true;
+                if(type == POSITION_TYPE_SELL && current_price >= (open_price + sl_price) / 2.0) trigger_defensive = true;
+
+                if(trigger_defensive)
+                {
+                    return;
+                    MqlTradeRequest request;
+                    MqlTradeResult result;
+                    ZeroMemory(request);
+                    ZeroMemory(result);
+                    Print("Defensive Close 50 % at 50 % of SL reached");
+                    request.action = TRADE_ACTION_DEAL;
+                    request.position = ticket;
+                    request.symbol = _Symbol;
+                    request.volume = NormalizeDouble(volume / 2.0, 2);
+                    if(request.volume > 0)
+                    {
+                        request.type = (type == POSITION_TYPE_BUY) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+                        request.price = (type == POSITION_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+                        request.magic = InpMagicNumber;
+                        request.type_filling = GetFillingMode();
+                        if(OrderSend(request, result))
+                        {
+                            g_sl_partial_closed = true;
+                            double part_pnl = PositionGetDouble(POSITION_PROFIT) / 2.0;
+                            LogEvent("Update", StringFormat("\"action\":\"DEFENSIVE_CLOSE_PARTIAL\", \"old_lot_size\": % f, \"new_lot_size\": % f, \"partial_pnl\": % f", volume, volume - request.volume, part_pnl));
+                        }
+                    }
+                }
+            }
+
       // Rule: At +10 pips profit, close 50% and move SL to breakeven
             if(!g_partial_closed && profit_pips >= InpFirstTP)
             {
@@ -458,7 +487,7 @@ void LogEvent(string event_type, string details)
                 MqlTradeResult result;
                 ZeroMemory(request);
                 ZeroMemory(result);
-                Print("Close 50 % and SL to BE");
+                Print("Close 50 % and SL to BE at: ", profit_pips);
                 request.action = TRADE_ACTION_DEAL;
                 request.position = ticket;
                 request.symbol = _Symbol;
