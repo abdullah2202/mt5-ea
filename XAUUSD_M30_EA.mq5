@@ -19,10 +19,12 @@ input string InpDashboardURL = "http://192.168.0.25:5000 / api / event"; // Dash
 input long InpMagicNumber = 123456;// Magic Number
 input double InpFirstTP = 20.0; // First TP
 input double InpTrailingStart = 30.0; // Trailing Start Profit
+input int InpATRPeriod = 14; // ATR Period for Max Candle Body
 
 //--- Global Variables
 double g_pip;
 double g_point;
+int g_atr_handle = INVALID_HANDLE;
 
 datetime g_setup_time = 0;
 double g_setup_high = 0;
@@ -67,6 +69,14 @@ int OnInit()
     g_pip = 10 * g_point; // Fallback for other configurations
    
     Print("g_pip: ", g_pip);
+    
+    g_atr_handle = iATR(_Symbol, _Period, InpATRPeriod);
+    if(g_atr_handle == INVALID_HANDLE)
+    {
+        Print("Failed to create ATR handle");
+        return(INIT_FAILED);
+    }
+    
     return(INIT_SUCCEEDED);
 }
 
@@ -75,6 +85,8 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
+    if(g_atr_handle != INVALID_HANDLE)
+    IndicatorRelease(g_atr_handle);
 }
 
 //+------------------------------------------------------------------+
@@ -255,8 +267,17 @@ void LogEvent(string event_type, string details)
         double upper_wick = last_high - MathMax(last_open, last_close);
         double lower_wick = MathMin(last_open, last_close) - last_low;
    
+   // Get ATR for max body
+        double atr_buffer[1];
+        if(CopyBuffer(g_atr_handle, 0, 1, 1, atr_buffer) < 1)
+        {
+            Print("Failed to copy ATR buffer");
+            return;
+        }
+        double max_body = atr_buffer[0];
+
    // Candle body rules
-        if(body < 5 * g_pip || body > 50 * g_pip) {
+        if(body < 5 * g_pip || body > max_body) {
             Print("Setup Invalidated: Body size is not in range");
             return;
         }
