@@ -44,6 +44,9 @@ bool g_partial_closed = false;
 bool g_sl_partial_closed = false;
 bool g_trailing_activated = false;
 
+double g_total_partial_pips = 0.0;
+double g_total_partial_profit = 0.0;
+
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
@@ -245,39 +248,39 @@ void LogEvent(string event_type, string details)
 //+------------------------------------------------------------------+
 //| Subroutine: Validate Candle Body and Wicks                       |
 //+------------------------------------------------------------------+
-bool IsValidCandleSetup(double last_open, double last_close, double last_high, double last_low)
-{
-    double body = MathAbs(last_close - last_open);
-    double upper_wick = last_high - MathMax(last_open, last_close);
-    double lower_wick = MathMin(last_open, last_close) - last_low;
+    bool IsValidCandleSetup(double last_open, double last_close, double last_high, double last_low)
+    {
+        double body = MathAbs(last_close - last_open);
+        double upper_wick = last_high - MathMax(last_open, last_close);
+        double lower_wick = MathMin(last_open, last_close) - last_low;
 
     // Get ATR for max body
-    double atr_buffer[1];
-    if(CopyBuffer(g_atr_handle, 0, 1, 1, atr_buffer) < 1)
-    {
-        Print("Failed to copy ATR buffer");
-        return false;
-    }
-    double max_body = atr_buffer[0];
+        double atr_buffer[1];
+        if(CopyBuffer(g_atr_handle, 0, 1, 1, atr_buffer) < 1)
+        {
+            Print("Failed to copy ATR buffer");
+            return false;
+        }
+        double max_body = atr_buffer[0];
 
     // Candle body rules
-    if(body < 5 * g_pip || body > max_body) {
-        Print("Setup Invalidated: Body size is not in range");
-        return false;
-    }
+        if(body < 5 * g_pip || body > max_body) {
+            Print("Setup Invalidated: Body size is not in range");
+            return false;
+        }
 
     // Wick rules (both upper and lower wicks)
-    if(upper_wick < 1 * g_pip || upper_wick > body * 0.5) {
-        Print("Setup Invalidated: Upper wick is not in range");
-        return false;
-    }
-    if(lower_wick < 1 * g_pip || lower_wick > body * 0.5) {
-        Print("Setup Invalidated: Lower wick is not in range");
-        return false;
-    }
+        if(upper_wick < 1 * g_pip || upper_wick > body * 0.5) {
+            Print("Setup Invalidated: Upper wick is not in range");
+            return false;
+        }
+        if(lower_wick < 1 * g_pip || lower_wick > body * 0.5) {
+            Print("Setup Invalidated: Lower wick is not in range");
+            return false;
+        }
 
-    return true;
-}
+        return true;
+    }
 
 //+------------------------------------------------------------------+
 //| Subroutine: Setup Validation (Called on New Candle Open)         |
@@ -548,6 +551,10 @@ bool IsValidCandleSetup(double last_open, double last_close, double last_high, d
                     {
                         g_partial_closed = true;
                         double part_pnl = PositionGetDouble(POSITION_PROFIT) / 2.0;
+                        
+                        g_total_partial_pips = g_total_partial_pips + profit_pips;
+                        g_total_partial_profit = g_total_partial_profit + (request.volume * 10.0 * profit_pips);
+                        
                         LogEvent("Update", StringFormat("\"action\":\"CLOSE_PARTIAL\", \"old_lot_size\": % f, \"new_lot_size\": % f, \"partial_pnl\": % f", volume, volume - request.volume, part_pnl));
                     }
                 }
@@ -659,6 +666,8 @@ bool IsValidCandleSetup(double last_open, double last_close, double last_high, d
             last_bar_time = current_bar_time;
             DetectSupportResistance();
             EvaluateSetup();
+            Print("Total Partial Pips: ", g_total_partial_pips);
+            Print("Total Partial Profit: ", g_total_partial_profit);
         }
      
    // Always execute tick-level checks if conditions are met
