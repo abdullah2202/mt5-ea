@@ -243,6 +243,43 @@ void LogEvent(string event_type, string details)
     }
 
 //+------------------------------------------------------------------+
+//| Subroutine: Validate Candle Body and Wicks                       |
+//+------------------------------------------------------------------+
+bool IsValidCandleSetup(double last_open, double last_close, double last_high, double last_low)
+{
+    double body = MathAbs(last_close - last_open);
+    double upper_wick = last_high - MathMax(last_open, last_close);
+    double lower_wick = MathMin(last_open, last_close) - last_low;
+
+    // Get ATR for max body
+    double atr_buffer[1];
+    if(CopyBuffer(g_atr_handle, 0, 1, 1, atr_buffer) < 1)
+    {
+        Print("Failed to copy ATR buffer");
+        return false;
+    }
+    double max_body = atr_buffer[0];
+
+    // Candle body rules
+    if(body < 5 * g_pip || body > max_body) {
+        Print("Setup Invalidated: Body size is not in range");
+        return false;
+    }
+
+    // Wick rules (both upper and lower wicks)
+    if(upper_wick < 1 * g_pip || upper_wick > body * 0.5) {
+        Print("Setup Invalidated: Upper wick is not in range");
+        return false;
+    }
+    if(lower_wick < 1 * g_pip || lower_wick > body * 0.5) {
+        Print("Setup Invalidated: Lower wick is not in range");
+        return false;
+    }
+
+    return true;
+}
+
+//+------------------------------------------------------------------+
 //| Subroutine: Setup Validation (Called on New Candle Open)         |
 //+------------------------------------------------------------------+
     void EvaluateSetup()
@@ -263,35 +300,6 @@ void LogEvent(string event_type, string details)
    
         if(last_open == 0 || last_close == 0) return;
    
-        double body = MathAbs(last_close - last_open);
-        double upper_wick = last_high - MathMax(last_open, last_close);
-        double lower_wick = MathMin(last_open, last_close) - last_low;
-   
-   // Get ATR for max body
-        double atr_buffer[1];
-        if(CopyBuffer(g_atr_handle, 0, 1, 1, atr_buffer) < 1)
-        {
-            Print("Failed to copy ATR buffer");
-            return;
-        }
-        double max_body = atr_buffer[0];
-
-   // Candle body rules
-        if(body < 5 * g_pip || body > max_body) {
-            Print("Setup Invalidated: Body size is not in range");
-            return;
-        }
-   
-   // Wick rules (both upper and lower wicks)
-        if(upper_wick < 1 * g_pip || upper_wick > body * 0.5) {
-            Print("Setup Invalidated: Upper wick is not in range");
-            return;
-        }
-        if(lower_wick < 1 * g_pip || lower_wick > body * 0.5) {
-            Print("Setup Invalidated: Lower wick is not in range");
-            return;
-        }
-   
    // Setup Conditions for Long
         if(g_nearest_res > 0)
         {
@@ -299,17 +307,20 @@ void LogEvent(string event_type, string details)
             {
                 if((last_close - g_nearest_res) >= 1 * g_pip)
                 {
-                    g_setup_valid_long = true;
-                    g_setup_time = iTime(_Symbol, _Period, 1);
-                    g_setup_high = last_high;
-                    g_setup_low = last_low;
-            
-                    // SL will be calculated at the moment of entry in CheckEntry()
-                    g_setup_sl = 0;
+                    if(IsValidCandleSetup(last_open, last_close, last_high, last_low))
+                    {
+                        g_setup_valid_long = true;
+                        g_setup_time = iTime(_Symbol, _Period, 1);
+                        g_setup_high = last_high;
+                        g_setup_low = last_low;
+                
+                        // SL will be calculated at the moment of entry in CheckEntry()
+                        g_setup_sl = 0;
 
-                    double entry_price = g_setup_high + 1 * g_pip;
-                    double est_lot = CalculateLotSize(entry_price, g_setup_sl);
-                    LogEvent("Setup Found", StringFormat("\"direction\":\"BUY\", \"price\": % f, \"sl\": % f, \"lot_size\": % f", entry_price, g_setup_sl, est_lot));
+                        double entry_price = g_setup_high + 1 * g_pip;
+                        double est_lot = CalculateLotSize(entry_price, g_setup_sl);
+                        LogEvent("Setup Found", StringFormat("\"direction\":\"BUY\", \"price\": % f, \"sl\": % f, \"lot_size\": % f", entry_price, g_setup_sl, est_lot));
+                    }
                 }
             }
         }
@@ -321,17 +332,20 @@ void LogEvent(string event_type, string details)
             {
                 if((g_nearest_sup - last_close) >= 1 * g_pip)
                 {
-                    g_setup_valid_short = true;
-                    g_setup_time = iTime(_Symbol, _Period, 1);
-                    g_setup_high = last_high;
-                    g_setup_low = last_low;
-            
-                    // SL will be calculated at the moment of entry in CheckEntry()
-                    g_setup_sl = 0;
+                    if(IsValidCandleSetup(last_open, last_close, last_high, last_low))
+                    {
+                        g_setup_valid_short = true;
+                        g_setup_time = iTime(_Symbol, _Period, 1);
+                        g_setup_high = last_high;
+                        g_setup_low = last_low;
+                
+                        // SL will be calculated at the moment of entry in CheckEntry()
+                        g_setup_sl = 0;
 
-                    double entry_price = g_setup_low - 1 * g_pip;
-                    double est_lot = CalculateLotSize(entry_price, g_setup_sl);
-                    LogEvent("Setup Found", StringFormat("\"direction\":\"SELL\", \"price\": % f, \"sl\": % f, \"lot_size\": % f", entry_price, g_setup_sl, est_lot));
+                        double entry_price = g_setup_low - 1 * g_pip;
+                        double est_lot = CalculateLotSize(entry_price, g_setup_sl);
+                        LogEvent("Setup Found", StringFormat("\"direction\":\"SELL\", \"price\": % f, \"sl\": % f, \"lot_size\": % f", entry_price, g_setup_sl, est_lot));
+                    }
                 }
             }
         }
