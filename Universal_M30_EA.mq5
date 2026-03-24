@@ -1,11 +1,11 @@
 //+------------------------------------------------------------------+
-//|                                                XAUUSD_M30_EA.mq5 |
+//|                                             Universal_M30_EA.mq5 |
 //|                                                      Antigravity |
 //+------------------------------------------------------------------+
 #property copyright   "Antigravity"
 #property link        ""
 #property version     "1.00"
-#property description "XAUUSD M30 Breakout EA - No discretionary logic"
+#property description "Universal M30 Breakout EA - No discretionary logic"
 
 //--- Input Parameters
 input string InpSessions = "--- Session settings ---";
@@ -14,12 +14,13 @@ input int InpLondonEndHour = 18; // London Session End Hour
 input int InpNYStartHour = 15; // NY Session Start Hour
 input int InpNYEndHour = 23; // NY Session End Hour
 input double InpRiskPercent = 1.0; // Risk Percentage per trade
-input string InpBotID = "XAUUSD_M30_EA"; // Bot Name(for logging)
+input string InpBotID = "Universal_M30_EA"; // Bot Name(for logging)
 input string InpDashboardURL = "http://192.168.0.25:5000 / api / event"; // Dashboard URL
 input long InpMagicNumber = 123456;// Magic Number
 input double InpFirstTP = 20.0; // First TP
 input double InpTrailingStart = 30.0; // Trailing Start Profit
 input int InpATRPeriod = 14; // ATR Period for Max Candle Body
+input double InpPipValue = 0.1; // Pip Value(e.g. 0.1 for XAUUSD, 0.01 for GBPJPY)
 
 //--- Global Variables
 double g_pip;
@@ -53,26 +54,16 @@ int g_total_partial_trades = 0;
 //+------------------------------------------------------------------+
 int OnInit()
 {
-    if(_Symbol != "XAUUSD.p")
-    {
-        Print("This EA is designed for XAUUSD only.");
-        return(INIT_FAILED);
-    }
     if(_Period != PERIOD_M30)
     {
         Print("This EA must be run on the M30 timeframe.");
         return(INIT_FAILED);
     }
      
-   // Define pip size for XAUUSD (assuming 2 or 3 digits, standard pip is 0.1 for Gold)
     g_point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-    int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-    if(digits == 2 || digits == 3)
-    g_pip = 0.1; // Standard XAUUSD 0.1 price move = 1 pip
-    else
-    g_pip = 10 * g_point; // Fallback for other configurations
+    g_pip = InpPipValue; // Use the chosen pip value directly
    
-    Print("g_pip: ", g_pip);
+    Print("g_pip: ", g_pip, " on symbol: ", _Symbol);
     
     g_atr_handle = iATR(_Symbol, _Period, InpATRPeriod);
     if(g_atr_handle == INVALID_HANDLE)
@@ -142,18 +133,18 @@ void LogEvent(string event_type, string details)
     {
         double sl_distance = MathAbs(price - sl);
         if(sl_distance == 0) return 0.0;
-   
+
         double tick_size = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
         double tick_value = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
         double risk_amount = AccountInfoDouble(ACCOUNT_BALANCE) * (InpRiskPercent / 100.0);
-   
+
         double sl_ticks = sl_distance / tick_size;
         double lot_size = risk_amount / (sl_ticks * tick_value);
-   
+
         double min_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
         double max_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
         double lot_step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
-   
+
         lot_size = MathRound(lot_size / lot_step) * lot_step;
         if(lot_size < min_lot * 2) lot_size = min_lot * 2;
         if(lot_size > max_lot) lot_size = max_lot;
@@ -181,16 +172,16 @@ void LogEvent(string event_type, string details)
         ArraySetAsSeries(rates_close, true);
         ArraySetAsSeries(rates_high, true);
         ArraySetAsSeries(rates_low, true);
-   
+
         if(CopyOpen(_Symbol, _Period, 1, 100, rates_open) < 100) return;
         if(CopyClose(_Symbol, _Period, 1, 100, rates_close) < 100) return;
         if(CopyHigh(_Symbol, _Period, 1, 100, rates_high) < 100) return;
         if(CopyLow(_Symbol, _Period, 1, 100, rates_low) < 100) return;
-   
+
         double temp_res = 0;
         double temp_sup = 0;
-   
-   // Find initial resistance
+
+// Find initial resistance
         for(int i = 1; i < 99; i++)
         {
             bool is_bullish = (rates_close[i + 1] > rates_open[i + 1]);
@@ -201,8 +192,8 @@ void LogEvent(string event_type, string details)
                 break;
             }
         }
-     
-   // Find initial support
+  
+// Find initial support
         for(int i = 1; i < 99; i++)
         {
             bool is_bearish = (rates_close[i + 1] < rates_open[i + 1]);
@@ -213,11 +204,11 @@ void LogEvent(string event_type, string details)
                 break;
             }
         }
-     
-   // Scan for updates within 100 candles
+  
+// Scan for updates within 100 candles
         for(int i = 1; i < 99; i++)
         {
-      // Resistance update rule
+  // Resistance update rule
             bool is_bullish_res = (rates_close[i + 1] > rates_open[i + 1]);
             bool is_bearish_res = (rates_close[i] < rates_open[i]);
             if(is_bullish_res && is_bearish_res)
@@ -228,8 +219,8 @@ void LogEvent(string event_type, string details)
                     temp_res = candidate_res;
                 }
             }
-        
-      // Support update rule
+    
+  // Support update rule
             bool is_bearish_sup = (rates_close[i + 1] < rates_open[i + 1]);
             bool is_bullish_sup = (rates_close[i] > rates_open[i]);
             if(is_bearish_sup && is_bullish_sup)
@@ -241,7 +232,7 @@ void LogEvent(string event_type, string details)
                 }
             }
         }
-     
+  
         g_nearest_res = temp_res;
         g_nearest_sup = temp_sup;
     }
@@ -255,7 +246,7 @@ void LogEvent(string event_type, string details)
         double upper_wick = last_high - MathMax(last_open, last_close);
         double lower_wick = MathMin(last_open, last_close) - last_low;
 
-    // Get ATR for max body
+// Get ATR for max body
         double atr_buffer[1];
         if(CopyBuffer(g_atr_handle, 0, 1, 1, atr_buffer) < 1)
         {
@@ -264,13 +255,13 @@ void LogEvent(string event_type, string details)
         }
         double max_body = atr_buffer[0];
 
-    // Candle body rules
+// Candle body rules
         if(body < 5 * g_pip || body > max_body) {
             Print("Setup Invalidated: Body size is not in range");
             return false;
         }
 
-    // Wick rules (both upper and lower wicks)
+// Wick rules (both upper and lower wicks)
         if(upper_wick < 1 * g_pip || upper_wick > body * 0.5) {
             Print("Setup Invalidated: Upper wick is not in range");
             return false;
@@ -288,23 +279,23 @@ void LogEvent(string event_type, string details)
 //+------------------------------------------------------------------+
     void EvaluateSetup()
     {
-   // Invalidate previous setups
+// Invalidate previous setups
         if(g_setup_valid_long) LogEvent("Setup Cancelled", "\"reason\":\"New candle open\"");
         if(g_setup_valid_short) LogEvent("Setup Cancelled", "\"reason\":\"New candle open\"");
-   
+
         g_setup_valid_long = false;
         g_setup_valid_short = false;
         g_wick_formed_long = false;
         g_wick_formed_short = false;
-   
+
         double last_open = iOpen(_Symbol, _Period, 1);
         double last_close = iClose(_Symbol, _Period, 1);
         double last_high = iHigh(_Symbol, _Period, 1);
         double last_low = iLow(_Symbol, _Period, 1);
-   
+
         if(last_open == 0 || last_close == 0) return;
-   
-   // Setup Conditions for Long
+
+// Setup Conditions for Long
         if(g_nearest_res > 0)
         {
             if(last_open < g_nearest_res && last_close > g_nearest_res)
@@ -317,8 +308,8 @@ void LogEvent(string event_type, string details)
                         g_setup_time = iTime(_Symbol, _Period, 1);
                         g_setup_high = last_high;
                         g_setup_low = last_low;
-                
-                        // SL will be calculated at the moment of entry in CheckEntry()
+            
+                    // SL will be calculated at the moment of entry in CheckEntry()
                         g_setup_sl = 0;
 
                         double entry_price = g_setup_high + 1 * g_pip;
@@ -328,8 +319,8 @@ void LogEvent(string event_type, string details)
                 }
             }
         }
-      
-   // Setup Conditions for Short
+  
+// Setup Conditions for Short
         if(g_nearest_sup > 0 && !g_setup_valid_long) // No overlapping setups
         {
             if(last_open > g_nearest_sup && last_close < g_nearest_sup)
@@ -342,8 +333,8 @@ void LogEvent(string event_type, string details)
                         g_setup_time = iTime(_Symbol, _Period, 1);
                         g_setup_high = last_high;
                         g_setup_low = last_low;
-                
-                        // SL will be calculated at the moment of entry in CheckEntry()
+            
+                    // SL will be calculated at the moment of entry in CheckEntry()
                         g_setup_sl = 0;
 
                         double entry_price = g_setup_low - 1 * g_pip;
@@ -361,17 +352,17 @@ void LogEvent(string event_type, string details)
     void CheckEntry()
     {
         if(!IsValidSession()) return;
-   
+
         double current_price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
         double current_ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
         double entry_low = iLow(_Symbol, _Period, 0);
         double entry_high = iHigh(_Symbol, _Period, 0);
         double entry_open = iOpen(_Symbol, _Period, 0);
-   
-   // Long Entry Check
+
+// Long Entry Check
         if(g_setup_valid_long)
         {
-      // Setup invalid if entry candle breaks below setup candle low
+  // Setup invalid if entry candle breaks below setup candle low
             if(current_price < g_setup_low)
             {
                 g_setup_valid_long = false;
@@ -379,13 +370,13 @@ void LogEvent(string event_type, string details)
                 Print("Entry Invalidated: Price broke below setup candle low before entry");
                 return;
             }
-        
-      // Lower wick must be >= 2 pips and form BEFORE breaking setup candle high
+    
+  // Lower wick must be >= 2 pips and form BEFORE breaking setup candle high
             double current_lower_wick = entry_open - entry_low;
             if(current_lower_wick >= 2 * g_pip)
             g_wick_formed_long = true;
-         
-      // Check entry trigger: lower wick formed BEFORE breaking setup candle high
+     
+  // Check entry trigger: lower wick formed BEFORE breaking setup candle high
             if(g_wick_formed_long && current_ask >= g_setup_high + 1 * g_pip)
             {
                 double entry_sl = iLow(_Symbol, _Period, 0) - 1 * g_pip;
@@ -394,11 +385,11 @@ void LogEvent(string event_type, string details)
                 g_setup_valid_long = false; // Prevent further entries
             }
         }
-      
-   // Short Entry Check
+  
+// Short Entry Check
         if(g_setup_valid_short)
         {
-      // Setup invalid if entry candle breaks above setup candle high
+  // Setup invalid if entry candle breaks above setup candle high
             if(current_price > g_setup_high)
             {
                 g_setup_valid_short = false;
@@ -406,13 +397,13 @@ void LogEvent(string event_type, string details)
                 Print("Entry Invalidated: Price broke above setup candle high before entry");
                 return;
             }
-        
-      // Upper wick must be >= 2 pips and form BEFORE breaking setup candle low
+    
+  // Upper wick must be >= 2 pips and form BEFORE breaking setup candle low
             double current_upper_wick = entry_high - entry_open;
             if(current_upper_wick >= 2 * g_pip)
             g_wick_formed_short = true;
-         
-      // Check entry trigger: upper wick formed BEFORE breaking setup candle low
+     
+  // Check entry trigger: upper wick formed BEFORE breaking setup candle low
             if(g_wick_formed_short && current_price <= g_setup_low - 1 * g_pip)
             {
                 double entry_sl = iHigh(_Symbol, _Period, 0) + 1 * g_pip;
@@ -429,15 +420,15 @@ void LogEvent(string event_type, string details)
     void ExecuteOrder(ENUM_ORDER_TYPE type, double price, double sl)
     {
         if(PositionsTotal() > 0) return; // Max 1 open trade
-   
+
         double lot_size = CalculateLotSize(price, sl);
         if(lot_size == 0) return;
-   
+
         MqlTradeRequest request;
         MqlTradeResult result;
         ZeroMemory(request);
         ZeroMemory(result);
-   
+
         request.action = TRADE_ACTION_DEAL;
         request.symbol = _Symbol;
         request.volume = lot_size;
@@ -447,7 +438,7 @@ void LogEvent(string event_type, string details)
         request.deviation = 10;
         request.magic = InpMagicNumber;
         request.type_filling = GetFillingMode();
-   
+
         if(OrderSend(request, result))
         {
             if(result.retcode == TRADE_RETCODE_DONE)
@@ -475,27 +466,27 @@ void LogEvent(string event_type, string details)
     void ManageTrades()
     {
         if(PositionsTotal() == 0) return;
-   
+
         for(int i = PositionsTotal() - 1; i >= 0; i--)
         {
             ulong ticket = PositionGetTicket(i);
             if(PositionGetString(POSITION_SYMBOL) != _Symbol || PositionGetInteger(POSITION_MAGIC) != InpMagicNumber)
             continue;
-         
+     
             double open_price = PositionGetDouble(POSITION_PRICE_OPEN);
             double current_price = PositionGetDouble(POSITION_PRICE_CURRENT);
             double sl_price = PositionGetDouble(POSITION_SL);
             double volume = PositionGetDouble(POSITION_VOLUME);
             long type = PositionGetInteger(POSITION_TYPE);
-      
+  
             double profit_pips = 0;
             if(type == POSITION_TYPE_BUY)
             profit_pips = (current_price - open_price) / g_pip;
             else if(type == POSITION_TYPE_SELL)
             profit_pips = (open_price - current_price) / g_pip;
-         
-            // Print("profit pips: ", profit_pips);
-            // Defensive Partial Close: 50% of position if price reaches 50% of SL
+     
+        // Print("profit pips: ", profit_pips);
+        // Defensive Partial Close: 50% of position if price reaches 50% of SL
             if(!g_partial_closed && !g_sl_partial_closed && sl_price > 0)
             {
                 bool trigger_defensive = false;
@@ -530,7 +521,7 @@ void LogEvent(string event_type, string details)
                 }
             }
 
-      // Rule: At +10 pips profit, close 50% and move SL to breakeven
+  // Rule: At +10 pips profit, close 50% and move SL to breakeven
             if(!g_partial_closed && profit_pips >= InpFirstTP)
             {
                 MqlTradeRequest request;
@@ -552,16 +543,16 @@ void LogEvent(string event_type, string details)
                     {
                         g_partial_closed = true;
                         double part_pnl = PositionGetDouble(POSITION_PROFIT) / 2.0;
-                        
+                    
                         g_total_partial_pips = g_total_partial_pips + profit_pips;
                         g_total_partial_profit = g_total_partial_profit + (request.volume * 10.0 * profit_pips);
                         g_total_partial_trades++;
-                        
+                    
                         LogEvent("Update", StringFormat("\"action\":\"CLOSE_PARTIAL\", \"old_lot_size\": % f, \"new_lot_size\": % f, \"partial_pnl\": % f", volume, volume - request.volume, part_pnl));
                     }
                 }
-           
-         // Move SL to Breakeven
+       
+     // Move SL to Breakeven
                 if(sl_price != open_price)
                 {
                     ZeroMemory(request);
@@ -577,13 +568,13 @@ void LogEvent(string event_type, string details)
                     }
                 }
             }
-        
-      // Rule: At +20 pips profit, activate 10 pips trailing stop forwards only
+    
+  // Rule: At +20 pips profit, activate 10 pips trailing stop forwards only
             if(!g_trailing_activated && profit_pips >= InpTrailingStart)
             {
                 g_trailing_activated = true;
             }
-        
+    
             if(g_trailing_activated)
             {
                 double new_sl = 0;
@@ -661,8 +652,8 @@ void LogEvent(string event_type, string details)
     {
         static datetime last_bar_time = 0;
         datetime current_bar_time = iTime(_Symbol, _Period, 0);
-   
-   // Check for new bar
+
+// Check for new bar
         if(current_bar_time != last_bar_time)
         {
             last_bar_time = current_bar_time;
@@ -672,13 +663,13 @@ void LogEvent(string event_type, string details)
             Print("Total Partial Profit: ", g_total_partial_profit);
             Print("Total Partial Trades: ", g_total_partial_trades);
         }
-     
-   // Always execute tick-level checks if conditions are met
+  
+// Always execute tick-level checks if conditions are met
         if(PositionsTotal() == 0)
         {
             CheckEntry();
         }
-     
+  
         ManageTrades();
     }
 //+------------------------------------------------------------------+
